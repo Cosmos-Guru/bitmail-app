@@ -1,0 +1,60 @@
+{
+  "name": "bitmail-app",
+  "version": "1.0.0",
+  "main": "electron.js",
+  "private": true,
+  "scripts": {
+    "start": "craco start",
+    "build": "craco build",
+    "test": "craco test",
+    "electron-start": "electron .",
+    "dev": "concurrently \"craco start\" \"wait-on http://localhost:3000 && electron .\""
+  },
+  "dependencies": {
+    "@cosmjs/proto-signing": "^0.33.0",
+    "@cosmjs/stargate": "^0.33.0",
+    "@craco/craco": "^7.1.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^6.4.5",
+    "buffer": "^6.0.3",
+    "concurrently": "^7.6.0",
+    "crypto-browserify": "^3.12.1",
+    "eccrypto": "^1.1.6",
+    "ipfs-http-client": "^60.0.1",
+    "node-fetch": "^3.3.2",
+    "process": "^0.11.10",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "stream-browserify": "^3.0.0",
+    "wait-on": "^7.0.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^23.1.2",
+    "eslint-plugin-react-hooks": "^5.1.0"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ],
+    "rules": {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn"
+    }
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
