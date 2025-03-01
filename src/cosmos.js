@@ -1,38 +1,36 @@
 // src/cosmos.js
 import { DirectSecp256k1HdWallet, Registry } from '@cosmjs/proto-signing';
 import { SigningStargateClient } from '@cosmjs/stargate';
-import { MsgCreateHashCid } from './ehlTypes';
-const config = require('./config.js');
+import { MsgCreateHashCid } from './ehlTypes.js';
+import { COSMOS_API, FAUCET_URL, IPFS_GATEWAY_URL, RPC_URL } from './config.js';
 
-const RPC_ENDPOINT = config.RPC_URL;
-const PREFIX = 'btml';
+export const createWalletFromMnemonic = async (mnemonic) => {
+  // Adjust prefix as needed.
+  return DirectSecp256k1HdWallet.fromMnemonic(mnemonic, { prefix: 'btml' });
+};
 
-// Create a registry and register your custom type.
-const registry = new Registry([
-  ['/bitmail.ehl.MsgCreateHashCid', MsgCreateHashCid],
-]);
-
-export async function createWalletFromMnemonic(mnemonic) {
-  return DirectSecp256k1HdWallet.fromMnemonic(mnemonic, { prefix: PREFIX });
-}
-
-export async function connect(wallet) {
+export const connect = async (wallet) => {
   const [account] = await wallet.getAccounts();
-  const client = await SigningStargateClient.connectWithSigner(RPC_ENDPOINT, wallet, {
-    registry: registry,
-    prefix: PREFIX,
+  const registry = new Registry([
+    ['/bitmail.ehl.MsgCreateHashCid', MsgCreateHashCid],
+  ]);
+  const client = await SigningStargateClient.connectWithSigner(RPC_URL, wallet, {
+    registry,
+    prefix: 'btml',
   });
   return { client, address: account.address };
-}
+};
 
-export async function sendTokens(client, fromAddress, toAddress, amount) {
-  const amountToSend = {
-    denom: 'ubtml',
-    amount: String(amount),
-  };
+export const sendTokens = async (client, fromAddress, toAddress, amount) => {
   const fee = {
     amount: [{ denom: 'ubtml', amount: '2000' }],
     gas: '200000',
   };
-  return await client.sendTokens(fromAddress, toAddress, [amountToSend], fee, 'Sending tokens');
-}
+  return await client.sendTokens(
+    fromAddress,
+    toAddress,
+    [{ denom: 'ubtml', amount: String(amount) }],
+    fee,
+    'Sending tokens'
+  );
+};

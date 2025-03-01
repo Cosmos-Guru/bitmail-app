@@ -1,4 +1,5 @@
-import * as _m0 from "protobufjs/minimal";
+// src/ehlTypes.js
+import * as _m0 from 'protobufjs/minimal.js';
 
 function createBaseMsgCreateHashCid() {
   return { creator: "", receiver: "", hashlink: "", vaultid: "" };
