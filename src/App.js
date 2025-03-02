@@ -1,7 +1,16 @@
 // File: src/App.js
-// Lines 1-50: Imports and helper functions
+// Lines 1–50: Imports and helper functions
 import React, { useState, useEffect, useCallback } from 'react';
-import { Container, Box, Typography, Card, CardContent, Grid, Button } from '@mui/material';
+import {
+  Container,
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  Grid,
+  Button,
+  Modal
+} from '@mui/material';
 import * as bip39 from 'bip39';
 import * as config from './config';
 import { createWalletFromMnemonic, connect, sendTokens } from './cosmos';
@@ -13,9 +22,19 @@ import AccountInfoPanel from './components/AccountInfoPanel';
 import FaucetPanel from './components/FaucetPanel';
 import FriendsPanel from './components/FriendsPanel';
 import QRCodePanel from './components/QRCodePanel';
-import { 
-  hasMnemonicStored, saveMnemonic, retrieveMnemonic, loadAccountInfo, loadFriendsList,
-  fetchPublicKey, writeEncryptedFile, readFile, deleteFile, uploadToIPFS, downloadQRCode, downloadFromIPFS 
+import {
+  hasMnemonicStored,
+  saveMnemonic,
+  retrieveMnemonic,
+  loadAccountInfo,
+  loadFriendsList,
+  fetchPublicKey,
+  writeEncryptedFile,
+  readFile,
+  deleteFile,
+  uploadToIPFS,
+  downloadQRCode,
+  downloadFromIPFS
 } from './ipc/handlers';
 import eccrypto from 'eccrypto';
 import * as utxo from '@bitgo/utxo-lib';
@@ -45,9 +64,9 @@ const derivePrivKey = (mnemonic) => {
   }
 };
 
-// Lines ~50-90: App Component and state declarations
+// Lines ~50–90: App Component and state declarations
 function App() {
-  // State declarations (ensure wallet and setWallet are declared)
+  // State declarations
   const [mnemonic, setMnemonic] = useState('');
   const [password, setPassword] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
@@ -67,15 +86,20 @@ function App() {
   const [tempUserName, setTempUserName] = useState("");
   const [friends, setFriends] = useState([]);
   const [inboxMessages, setInboxMessages] = useState([]);
-  // <<-- This was missing before: declare wallet state -->
+  // currentMessage holds details of the selected inbox message.
+  const [currentMessage, setCurrentMessage] = useState(null);
+  // Wallet state.
   const [wallet, setWallet] = useState(null);
+  // New state for message sending status modal.
+  const [messageStatus, setMessageStatus] = useState('');
+  const [showMessageStatus, setShowMessageStatus] = useState(false);
 
   const appendLog = useCallback((message) => {
     console.log(message);
     setLog((prev) => prev + '\n' + message);
   }, []);
 
-  // Lines ~90-110: Check if mnemonic is stored on initial load
+  // Lines ~90–110: Check if mnemonic is stored on initial load
   useEffect(() => {
     const checkMnemonic = async () => {
       try {
@@ -89,7 +113,7 @@ function App() {
     checkMnemonic();
   }, [appendLog]);
 
-  // Lines ~110-130: Load account info when walletAddress becomes available
+  // Lines ~110–130: Load account info when walletAddress becomes available
   const loadAccInfo = useCallback(async () => {
     if (!walletAddress) return;
     try {
@@ -130,7 +154,7 @@ function App() {
     setEditingUserName(false);
   };
 
-  // Lines ~130-170: Inbox Functions
+  // Lines ~130–170: Inbox Functions
   const fetchInboxMessages = async () => {
     if (!walletAddress) return;
     try {
@@ -154,11 +178,10 @@ function App() {
     }
   }, [selectedTab, walletAddress]);
 
-  // Lines ~170-210: Updated handleViewMessage with decryption steps
+  // Lines ~170–210: Updated handleViewMessage (Inbox view)
   const handleViewMessage = async (msg) => {
     try {
       appendLog("Viewing message with ID: " + msg.id);
-      // Step 1: Decrypt the hashlink to get the plain IPFS CID.
       const encryptedHashlink = JSON.parse(msg.hashlink);
       const decryptedBuffer = await eccrypto.decrypt(privateKey, {
         iv: Buffer.from(encryptedHashlink.iv, 'base64'),
@@ -169,15 +192,12 @@ function App() {
       const ipfsCid = decryptedBuffer.toString('utf8').trim();
       appendLog("Decrypted IPFS CID: " + ipfsCid);
       
-      // Step 2: Download the encrypted message from IPFS using the decrypted CID.
       const downloadResult = await downloadFromIPFS(ipfsCid);
       if (!downloadResult.success) {
         appendLog("Error downloading message: " + JSON.stringify(downloadResult.error));
         return;
       }
       
-      // Step 3: Decrypt the downloaded message.
-      // We assume the downloaded content is a JSON string with encrypted message data.
       const encryptedMessageData = JSON.parse(downloadResult.data);
       const decryptedMsgBuffer = await eccrypto.decrypt(privateKey, {
         iv: Buffer.from(encryptedMessageData.iv, 'base64'),
@@ -188,11 +208,34 @@ function App() {
       const decryptedMsg = decryptedMsgBuffer.toString('utf8').trim();
       appendLog("Decrypted message: " + decryptedMsg);
       
-      // Instead of showing a modal, embed the message in the Message tab.
-      setMsgBody(decryptedMsg);
-      setSelectedTab('Message');
+      // Parse the decrypted message into subject and body.
+      const lines = decryptedMsg.split('\n');
+      const subjectLine = lines[0] || "";
+      const subject = subjectLine.replace(/^Subject:\s*/i, '').trim();
+      const body = lines.slice(1).join('\n').trim();
+      
+      // For Inbox view, display only the message body.
+      setCurrentMessage({
+        sender: msg.creator,
+        subject,
+        originalBody: body, // for reply formatting
+        body: body,
+      });
     } catch (error) {
       appendLog("Error viewing message: " + (typeof error === 'object' ? JSON.stringify(error) : error));
+    }
+  };
+
+  // New function: Reply from Inbox message box.
+  const handleReplyFromInbox = () => {
+    if (currentMessage) {
+      setMsgTo(currentMessage.sender);
+      setMsgSubject(`Re: ${currentMessage.subject}`);
+      // Format the reply with a blank first line, then the header and original details.
+      const replyContent = `\n----Original Message----\nFrom: ${currentMessage.sender}\nSubject: ${currentMessage.subject}\nMessage: ${currentMessage.originalBody}`;
+      setMsgBody(replyContent);
+      setSelectedTab('Message');
+      setCurrentMessage(null);
     }
   };
 
@@ -206,21 +249,19 @@ function App() {
     setSelectedTab('Wallet');
   };
 
-  // Lines ~210-280: Login and Wallet Functions
+  // Lines ~210–280: Login and Wallet Functions
   const handleLogin = async () => {
     appendLog('Starting login process...');
     try {
       const mnemonicToUse = mnemonic.trim();
-      if (!hasMnemonicState) {
-        appendLog('No mnemonic found, saving new mnemonic...');
-        const saveResult = await saveMnemonic(mnemonicToUse, password);
-        if (saveResult.success) {
-          setHasMnemonicState(true);
-          appendLog('Mnemonic saved successfully.');
-        } else {
-          appendLog(`Error saving mnemonic: ${saveResult.error}`);
-          return;
-        }
+      appendLog('Saving mnemonic...');
+      const saveResult = await saveMnemonic(mnemonicToUse, password);
+      if (saveResult.success) {
+        setHasMnemonicState(true);
+        appendLog('Mnemonic saved successfully.');
+      } else {
+        appendLog(`Error saving mnemonic: ${saveResult.error}`);
+        return;
       }
       appendLog('Retrieving mnemonic...');
       const retrievedResult = await retrieveMnemonic(password);
@@ -294,7 +335,7 @@ function App() {
     }
   }, [walletAddress, fetchBalance]);
 
-  // Lines ~280-300: Send Tokens Function
+  // Lines ~280–300: Send Tokens Function
   const handleSend = async () => {
     if (!client || !walletAddress) {
       appendLog('You must log in first.');
@@ -303,7 +344,7 @@ function App() {
     try {
       appendLog(`Sending tokens from ${walletAddress} to ${toAddress} with amount ${amount}`);
       const result = await sendTokens(client, walletAddress, toAddress, amount);
-      appendLog(`Transaction successful:\n${JSON.stringify(result, null, 2)}`);
+      appendLog(`Transaction successful:\n${JSON.stringify(result, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)}`);
       fetchBalance();
     } catch (error) {
       console.error('Error sending tokens:', error);
@@ -311,9 +352,98 @@ function App() {
     }
   };
 
-  // ----------------- End Send Tokens Function -----------------
+  // New function: handleSendMessage (Send Bitmail message flow)
+  const handleSendMessage = async () => {
+    try {
+      if (!client || !walletAddress || !msgTo || !msgSubject || !msgBody) {
+        appendLog("All message fields must be filled out.");
+        return;
+      }
+      
+      // Show sending message modal
+      setMessageStatus("Sending message, please wait...");
+      setShowMessageStatus(true);
+      
+      appendLog(`Fetching public key for receiver: ${msgTo}`);
+      // Use API endpoint to fetch receiver public key.
+      const response = await fetch(`${config.COSMOS_API}/cosmos/auth/v1beta1/accounts/${msgTo}`);
+      if (!response.ok) {
+        setMessageStatus("");
+        setShowMessageStatus(false);
+        appendLog("Error fetching public key: HTTP " + response.status);
+        return;
+      }
+      const data = await response.json();
+      const receiverPubKey = data.account?.pub_key?.key;
+      if (!receiverPubKey) {
+        setMessageStatus("");
+        setShowMessageStatus(false);
+        appendLog("Receiver public key not found.");
+        return;
+      }
+      appendLog("Receiver public key fetched.");
+      
+      const fullMessage = `Subject: ${msgSubject}\n\n${msgBody}`;
+      const receiverPubKeyBuffer = Buffer.from(receiverPubKey, 'base64');
+      
+      // Encrypt the message with the receiver's public key.
+      const encryptedMessageObj = await eccrypto.encrypt(receiverPubKeyBuffer, Buffer.from(fullMessage, 'utf8'));
+      const encryptedMessageStr = JSON.stringify({
+        iv: encryptedMessageObj.iv.toString('base64'),
+        ephemPublicKey: encryptedMessageObj.ephemPublicKey.toString('base64'),
+        ciphertext: encryptedMessageObj.ciphertext.toString('base64'),
+        mac: encryptedMessageObj.mac.toString('base64')
+      });
+      appendLog("Uploading encrypted message to IPFS...");
+      const uploadResult = await window.electronAPI.uploadToIPFS(encryptedMessageStr);
+      if (!uploadResult.success) {
+        setMessageStatus("");
+        setShowMessageStatus(false);
+        appendLog("Error uploading message to IPFS: " + uploadResult.error);
+        return;
+      }
+      const ipfsCid = uploadResult.cid;
+      appendLog("IPFS CID received: " + ipfsCid);
+      
+      // Encrypt the IPFS CID using the receiver's public key.
+      const encryptedCidObj = await eccrypto.encrypt(receiverPubKeyBuffer, Buffer.from(ipfsCid, 'utf8'));
+      const encryptedCidStr = JSON.stringify({
+        iv: encryptedCidObj.iv.toString('base64'),
+        ephemPublicKey: encryptedCidObj.ephemPublicKey.toString('base64'),
+        ciphertext: encryptedCidObj.ciphertext.toString('base64'),
+        mac: encryptedCidObj.mac.toString('base64')
+      });
+      appendLog("Sending message transaction...");
+      const msgTx = {
+        typeUrl: '/bitmail.ehl.MsgCreateHashCid',
+        value: {
+          creator: walletAddress,
+          receiver: msgTo,
+          hashlink: encryptedCidStr,
+          vaultid: ""
+        }
+      };
+      const fee = {
+        amount: [{ denom: MICRO_DENOM, amount: '2000' }],
+        gas: '200000'
+      };
+      const txResult = await client.signAndBroadcast(walletAddress, [msgTx], fee, 'Send Message');
+      appendLog(`Message transaction result:\n${JSON.stringify(txResult, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)}`);
+      
+      // Update modal to show success and then hide it.
+      setMessageStatus("Message successfully sent.");
+      setTimeout(() => {
+        setShowMessageStatus(false);
+        setMessageStatus("");
+      }, 3000);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      appendLog("Error sending message: " + error.message);
+      setMessageStatus("");
+      setShowMessageStatus(false);
+    }
+  };
 
-  // Lines ~300-end: Render JSX
   if (!walletAddress) {
     return (
       <LoginPanel
@@ -410,6 +540,33 @@ function App() {
                       </Box>
                     ))
                   )}
+                  {currentMessage && (
+                    <Box sx={{ mt: 2, p: 2, border: '1px solid #ccc', borderRadius: 1 }}>
+                      <Typography variant="h6">Message Details</Typography>
+                      <Typography variant="body2">
+                        <strong>From:</strong> {currentMessage.sender}
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Subject:</strong> {currentMessage.subject}
+                      </Typography>
+                      <Box
+                        sx={{
+                          mt: 1,
+                          maxHeight: '150px',
+                          overflowY: 'auto',
+                          backgroundColor: '#f5f5f5',
+                          p: 1,
+                        }}
+                      >
+                        <Typography variant="body1">
+                          {currentMessage.body}
+                        </Typography>
+                      </Box>
+                      <Button variant="contained" sx={{ mt: 1 }} onClick={handleReplyFromInbox}>
+                        Reply
+                      </Button>
+                    </Box>
+                  )}
                 </Box>
               )}
               {selectedTab === 'Message' && (
@@ -420,6 +577,7 @@ function App() {
                   setMsgSubject={setMsgSubject}
                   msgBody={msgBody}
                   setMsgBody={setMsgBody}
+                  handleSendMessage={handleSendMessage}
                 />
               )}
               {selectedTab === 'Friends' && (
@@ -462,6 +620,33 @@ function App() {
           {log}
         </Typography>
       </Box>
+      {/* Modal for message sending status */}
+      <Modal
+        open={showMessageStatus}
+        onClose={(e, reason) => {
+          // Prevent closing modal via backdrop click
+          if (reason !== 'backdropClick') {
+            setShowMessageStatus(false);
+          }
+        }}
+        disableEscapeKeyDown
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            bgcolor: 'background.paper',
+            p: 4,
+            border: '2px solid #000',
+            borderRadius: 2,
+            textAlign: 'center'
+          }}
+        >
+          <Typography variant="h6">{messageStatus}</Typography>
+        </Box>
+      </Modal>
     </Container>
   );
 }
