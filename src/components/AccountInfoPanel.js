@@ -10,8 +10,7 @@ const AccountInfoPanel = ({
   setTempUserName,
   handleSaveUserName,
   handleCancelEditUserName,
-  toggleEditUserName
-  // Removed handleDownloadQRCode prop since it's not needed here
+  toggleEditUserName,
 }) => {
   return (
     <div>
@@ -41,7 +40,7 @@ const AccountInfoPanel = ({
           {accountInfo.userName ? "Edit" : "+ Add"}
         </Button>
       )}
-      {/* The Download QR Code button has been removed */}
+      {/* QR Code button removed as requested */}
     </div>
   );
 };

@@ -1,12 +1,13 @@
+// File: src/App.js
+// Lines 1-50: Imports and helper functions
 import React, { useState, useEffect, useCallback } from 'react';
-import { Container, Box, Typography, Card, CardContent, Grid, Modal, Button } from '@mui/material';
+import { Container, Box, Typography, Card, CardContent, Grid, Button } from '@mui/material';
 import * as bip39 from 'bip39';
 import * as config from './config';
 import { createWalletFromMnemonic, connect, sendTokens } from './cosmos';
 import NavigationSidebar from './components/NavigationSidebar';
 import LoginPanel from './components/LoginPanel';
 import WalletPanel from './components/WalletPanel';
-import InboxPanel from './components/InboxPanel';
 import MessagePanel from './components/MessagePanel';
 import AccountInfoPanel from './components/AccountInfoPanel';
 import FaucetPanel from './components/FaucetPanel';
@@ -44,7 +45,9 @@ const derivePrivKey = (mnemonic) => {
   }
 };
 
+// Lines ~50-90: App Component and state declarations
 function App() {
+  // State declarations (ensure wallet and setWallet are declared)
   const [mnemonic, setMnemonic] = useState('');
   const [password, setPassword] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
@@ -64,8 +67,7 @@ function App() {
   const [tempUserName, setTempUserName] = useState("");
   const [friends, setFriends] = useState([]);
   const [inboxMessages, setInboxMessages] = useState([]);
-  const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [viewMessageContent, setViewMessageContent] = useState('');
+  // <<-- This was missing before: declare wallet state -->
   const [wallet, setWallet] = useState(null);
 
   const appendLog = useCallback((message) => {
@@ -73,6 +75,7 @@ function App() {
     setLog((prev) => prev + '\n' + message);
   }, []);
 
+  // Lines ~90-110: Check if mnemonic is stored on initial load
   useEffect(() => {
     const checkMnemonic = async () => {
       try {
@@ -86,6 +89,7 @@ function App() {
     checkMnemonic();
   }, [appendLog]);
 
+  // Lines ~110-130: Load account info when walletAddress becomes available
   const loadAccInfo = useCallback(async () => {
     if (!walletAddress) return;
     try {
@@ -103,6 +107,106 @@ function App() {
     }
   }, [walletAddress, appendLog]);
 
+  const toggleEditUserName = () => {
+    setTempUserName(accountInfo.userName);
+    setEditingUserName(true);
+  };
+
+  const handleSaveUserName = async () => {
+    const trimmedName = tempUserName.slice(0, 44);
+    const newAccountInfo = { ...accountInfo, userName: trimmedName };
+    const saveResp = await window.electronAPI.saveAccountInfo({ walletAddress, accountInfo: newAccountInfo });
+    if (saveResp.success) {
+      setAccountInfo(newAccountInfo);
+      appendLog('Username saved.');
+    } else {
+      appendLog('Error saving username: ' + saveResp.error);
+    }
+    setEditingUserName(false);
+  };
+
+  const handleCancelEditUserName = () => {
+    setTempUserName(accountInfo.userName);
+    setEditingUserName(false);
+  };
+
+  // Lines ~130-170: Inbox Functions
+  const fetchInboxMessages = async () => {
+    if (!walletAddress) return;
+    try {
+      const response = await fetch(`${config.COSMOS_API}/bitmail/ehl/hash_cid_by_receiver/${walletAddress}`);
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+      const data = await response.json();
+      if (data.hashCid) {
+        data.hashCid.sort((a, b) => parseInt(b.id) - parseInt(a.id));
+        setInboxMessages(data.hashCid);
+      }
+    } catch (error) {
+      appendLog("Error fetching inbox messages: " + error.message);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedTab === 'Inbox' && walletAddress) {
+      fetchInboxMessages();
+      const interval = setInterval(fetchInboxMessages, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [selectedTab, walletAddress]);
+
+  // Lines ~170-210: Updated handleViewMessage with decryption steps
+  const handleViewMessage = async (msg) => {
+    try {
+      appendLog("Viewing message with ID: " + msg.id);
+      // Step 1: Decrypt the hashlink to get the plain IPFS CID.
+      const encryptedHashlink = JSON.parse(msg.hashlink);
+      const decryptedBuffer = await eccrypto.decrypt(privateKey, {
+        iv: Buffer.from(encryptedHashlink.iv, 'base64'),
+        ephemPublicKey: Buffer.from(encryptedHashlink.ephemPublicKey, 'base64'),
+        ciphertext: Buffer.from(encryptedHashlink.ciphertext, 'base64'),
+        mac: Buffer.from(encryptedHashlink.mac, 'base64')
+      });
+      const ipfsCid = decryptedBuffer.toString('utf8').trim();
+      appendLog("Decrypted IPFS CID: " + ipfsCid);
+      
+      // Step 2: Download the encrypted message from IPFS using the decrypted CID.
+      const downloadResult = await downloadFromIPFS(ipfsCid);
+      if (!downloadResult.success) {
+        appendLog("Error downloading message: " + JSON.stringify(downloadResult.error));
+        return;
+      }
+      
+      // Step 3: Decrypt the downloaded message.
+      // We assume the downloaded content is a JSON string with encrypted message data.
+      const encryptedMessageData = JSON.parse(downloadResult.data);
+      const decryptedMsgBuffer = await eccrypto.decrypt(privateKey, {
+        iv: Buffer.from(encryptedMessageData.iv, 'base64'),
+        ephemPublicKey: Buffer.from(encryptedMessageData.ephemPublicKey, 'base64'),
+        ciphertext: Buffer.from(encryptedMessageData.ciphertext, 'base64'),
+        mac: Buffer.from(encryptedMessageData.mac, 'base64')
+      });
+      const decryptedMsg = decryptedMsgBuffer.toString('utf8').trim();
+      appendLog("Decrypted message: " + decryptedMsg);
+      
+      // Instead of showing a modal, embed the message in the Message tab.
+      setMsgBody(decryptedMsg);
+      setSelectedTab('Message');
+    } catch (error) {
+      appendLog("Error viewing message: " + (typeof error === 'object' ? JSON.stringify(error) : error));
+    }
+  };
+
+  const handleSendBitmail = (friendAddress) => {
+    setMsgTo(friendAddress);
+    setSelectedTab('Message');
+  };
+
+  const handleSendBTMLToken = (friendAddress) => {
+    setToAddress(friendAddress);
+    setSelectedTab('Wallet');
+  };
+
+  // Lines ~210-280: Login and Wallet Functions
   const handleLogin = async () => {
     appendLog('Starting login process...');
     try {
@@ -190,6 +294,7 @@ function App() {
     }
   }, [walletAddress, fetchBalance]);
 
+  // Lines ~280-300: Send Tokens Function
   const handleSend = async () => {
     if (!client || !walletAddress) {
       appendLog('You must log in first.');
@@ -206,12 +311,9 @@ function App() {
     }
   };
 
-  const bigintReplacer = (_, value) =>
-    typeof value === 'bigint' ? value.toString() : value;
+  // ----------------- End Send Tokens Function -----------------
 
-  // For brevity, additional handlers like handleSendMessage are not fully refactored here.
-  // You can create similar components for Message, Account Info, etc.
-
+  // Lines ~300-end: Render JSX
   if (!walletAddress) {
     return (
       <LoginPanel
@@ -259,20 +361,76 @@ function App() {
                   editingUserName={editingUserName}
                   tempUserName={tempUserName}
                   setTempUserName={setTempUserName}
-                  handleSaveUserName={() => {}}
-                  handleCancelEditUserName={() => {}}
-                  toggleEditUserName={() => {}}
-                  handleDownloadQRCode={() => {}}
+                  handleSaveUserName={handleSaveUserName}
+                  handleCancelEditUserName={handleCancelEditUserName}
+                  toggleEditUserName={toggleEditUserName}
                 />
               )}
-              {selectedTab === 'Faucet' && <FaucetPanel walletAddress={walletAddress} appendLog={appendLog} />}
-              {selectedTab === 'Inbox' && <InboxPanel />}
-              {selectedTab === 'Message' && <MessagePanel />}
+              {selectedTab === 'Faucet' && (
+                <FaucetPanel walletAddress={walletAddress} appendLog={appendLog} />
+              )}
+              {selectedTab === 'Inbox' && (
+                <Box sx={{ maxHeight: '400px', overflowY: 'auto', p: 1 }}>
+                  <Typography variant="h5" gutterBottom>
+                    Inbox
+                  </Typography>
+                  {inboxMessages.length === 0 ? (
+                    <Typography variant="body1">No messages found.</Typography>
+                  ) : (
+                    inboxMessages.map((msg) => (
+                      <Box key={msg.id} sx={{ borderBottom: '1px solid #ccc', py: 1 }}>
+                        <Typography variant="body1">
+                          <strong>From:</strong> {msg.creator}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>ID:</strong> {msg.id}
+                        </Typography>
+                        <Box sx={{ mt: 1 }}>
+                          <Button
+                            variant="contained"
+                            onClick={() => handleViewMessage(msg)}
+                            sx={{ mr: 1 }}
+                          >
+                            View Message
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            onClick={() => handleSendBitmail(msg.creator)}
+                            sx={{ mr: 1 }}
+                          >
+                            Send Bitmail
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            onClick={() => handleSendBTMLToken(msg.creator)}
+                          >
+                            Send BTML Token
+                          </Button>
+                        </Box>
+                      </Box>
+                    ))
+                  )}
+                </Box>
+              )}
+              {selectedTab === 'Message' && (
+                <MessagePanel
+                  msgTo={msgTo}
+                  setMsgTo={setMsgTo}
+                  msgSubject={msgSubject}
+                  setMsgSubject={setMsgSubject}
+                  msgBody={msgBody}
+                  setMsgBody={setMsgBody}
+                />
+              )}
               {selectedTab === 'Friends' && (
                 <FriendsPanel
                   friends={friends}
-                  handleDeleteFriend={() => {}}
-                  handleAddFriend={() => {}}
+                  handleDeleteFriend={(friend) => {
+                    // Implement friend deletion logic here.
+                  }}
+                  handleAddFriend={() => {
+                    // Implement friend addition logic here (e.g., open a QR upload dialog).
+                  }}
                 />
               )}
               {selectedTab === 'QR Code' && (
@@ -280,44 +438,27 @@ function App() {
                   walletAddress={walletAddress}
                   accountInfo={accountInfo}
                   appendLog={appendLog}
-                  handleDownloadQRCode={() => {}}
+                  handleDownloadQRCode={() => {
+                    // Implement QR code download logic here.
+                  }}
                 />
               )}
             </CardContent>
           </Card>
         </Grid>
       </Grid>
-      <Modal
-        open={false} // For simplicity, modal can be implemented within the respective component later.
-        onClose={() => {}}
-        aria-labelledby="view-message-title"
-        aria-describedby="view-message-description"
-      >
-        <Box
-          sx={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 400,
-            bgcolor: 'background.paper',
-            border: '2px solid #000',
-            boxShadow: 24,
-            p: 4,
-          }}
-        >
-          <Typography id="view-message-title" variant="h6" component="h2">
-            Message Content
-          </Typography>
-          <Typography id="view-message-description" sx={{ mt: 2 }}>
-            {/* Message content */}
-          </Typography>
-          <Button onClick={() => {}}>Close</Button>
-        </Box>
-      </Modal>
       <Box sx={{ mt: 4 }}>
         <Typography variant="h6">Log</Typography>
-        <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', backgroundColor: '#333', color: 'white', p: 2, borderRadius: 1 }}>
+        <Typography
+          variant="body1"
+          sx={{
+            whiteSpace: 'pre-wrap',
+            backgroundColor: '#333',
+            color: 'white',
+            p: 2,
+            borderRadius: 1,
+          }}
+        >
           {log}
         </Typography>
       </Box>
