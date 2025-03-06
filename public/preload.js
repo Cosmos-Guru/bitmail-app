@@ -4,7 +4,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 console.log('Preload Script Loaded');
 
 const electronAPI = {
-  // Existing IPC invocation method with a whitelist of channels
   invoke: (channel, data) => {
     const validChannels = [
       'fetchPublicKey',
@@ -23,7 +22,8 @@ const electronAPI = {
       'retrieveMnemonic',
       'hasMnemonicStored',
       'getStoreValue',
-      'setStoreValue'
+      'setStoreValue',
+      'saveUserName' // new channel
     ];
 
     if (!validChannels.includes(channel)) {
@@ -35,8 +35,6 @@ const electronAPI = {
         throw new Error(error.message || 'Unknown IPC error');
       });
   },
-
-  // Directly exposed methods
   fetchPublicKey: (address) => ipcRenderer.invoke('fetchPublicKey', address),
   writeEncryptedFile: (filename, contents) => ipcRenderer.invoke('writeEncryptedFile', { filename, contents }),
   readFile: (filePath) => ipcRenderer.invoke('readFile', filePath),
@@ -49,16 +47,15 @@ const electronAPI = {
   saveFriendsList: (data) => ipcRenderer.invoke('saveFriendsList', data),
   loadFriendsList: (address) => ipcRenderer.invoke('loadFriendsList', address),
   readFriendQRCode: () => ipcRenderer.invoke('readFriendQRCode'),
-  
   // Mnemonic-related functions
   saveMnemonic: (mnemonic, password) => ipcRenderer.invoke('saveMnemonic', mnemonic, password),
   retrieveMnemonic: (password) => ipcRenderer.invoke('retrieveMnemonic', password),
   hasMnemonicStored: () => ipcRenderer.invoke('hasMnemonicStored'),
-
   // Store-related methods
   getStoreValue: (key) => ipcRenderer.invoke('getStoreValue', key),
-  setStoreValue: (key, value) => ipcRenderer.invoke('setStoreValue', key, value)
+  setStoreValue: (key, value) => ipcRenderer.invoke('setStoreValue', key, value),
+  // New: Expose saveUserName
+  saveUserName: (data) => ipcRenderer.invoke('saveUserName', data)
 };
 
-// Expose the merged API in the renderer process under window.electronAPI
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

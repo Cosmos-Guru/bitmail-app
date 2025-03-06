@@ -1,43 +1,20 @@
-// File: src/App.js
-// Lines 1–50: Imports and helper functions
+// src/App.js
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Container,
-  Box,
-  Typography,
-  Card,
-  CardContent,
-  Grid,
-  Button,
-  Modal
-} from '@mui/material';
 import * as bip39 from 'bip39';
 import * as config from './config';
 import { createWalletFromMnemonic, connect, sendTokens } from './cosmos';
-import NavigationSidebar from './components/NavigationSidebar';
 import LoginPanel from './components/LoginPanel';
-import WalletPanel from './components/WalletPanel';
-import MessagePanel from './components/MessagePanel';
-import AccountInfoPanel from './components/AccountInfoPanel';
-import FaucetPanel from './components/FaucetPanel';
-import FriendsPanel from './components/FriendsPanel';
-import QRCodePanel from './components/QRCodePanel';
+import Layout from './components/Layout';
 import {
   hasMnemonicStored,
   saveMnemonic,
   retrieveMnemonic,
   loadAccountInfo,
-  loadFriendsList,
-  fetchPublicKey,
-  writeEncryptedFile,
-  readFile,
-  deleteFile,
-  uploadToIPFS,
-  downloadQRCode,
-  downloadFromIPFS
+  loadFriendsList
 } from './ipc/handlers';
 import eccrypto from 'eccrypto';
 import * as utxo from '@bitgo/utxo-lib';
+import { downloadFromIPFS } from './ipfsTools';
 
 const MICRO_DENOM = 'ubtml';
 const CONVERSION_FACTOR = 1e6;
@@ -64,7 +41,6 @@ const derivePrivKey = (mnemonic) => {
   }
 };
 
-// Lines ~50–90: App Component and state declarations
 function App() {
   // State declarations
   const [mnemonic, setMnemonic] = useState('');
@@ -86,11 +62,8 @@ function App() {
   const [tempUserName, setTempUserName] = useState("");
   const [friends, setFriends] = useState([]);
   const [inboxMessages, setInboxMessages] = useState([]);
-  // currentMessage holds details of the selected inbox message.
   const [currentMessage, setCurrentMessage] = useState(null);
-  // Wallet state.
   const [wallet, setWallet] = useState(null);
-  // New state for message sending status modal.
   const [messageStatus, setMessageStatus] = useState('');
   const [showMessageStatus, setShowMessageStatus] = useState(false);
 
@@ -99,12 +72,13 @@ function App() {
     setLog((prev) => prev + '\n' + message);
   }, []);
 
-  // Lines ~90–110: Check if mnemonic is stored on initial load
+  // Check if mnemonic is stored on initial load
   useEffect(() => {
     const checkMnemonic = async () => {
       try {
-        const mnemonicExists = await hasMnemonicStored();
-        setHasMnemonicState(mnemonicExists);
+        const exists = await hasMnemonicStored();
+        console.log('[App] hasMnemonicStored:', exists);
+        setHasMnemonicState(exists);
       } catch (error) {
         console.error("Error checking mnemonic storage:", error);
         appendLog(`Error checking mnemonic storage: ${error.message}`);
@@ -113,24 +87,44 @@ function App() {
     checkMnemonic();
   }, [appendLog]);
 
-  // Lines ~110–130: Load account info when walletAddress becomes available
+  // Log walletAddress changes and trigger loading account info afterward
+  useEffect(() => {
+    console.log('[App] Wallet address updated:', walletAddress);
+    if (walletAddress) {
+      // First fetch balance, then load account info
+      fetchBalance();
+      loadAccInfo();
+    }
+  }, [walletAddress]);
+
+  // Define loadAccInfo before it's used
   const loadAccInfo = useCallback(async () => {
     if (!walletAddress) return;
     try {
+      console.log('[App.loadAccInfo] Starting to load account info for wallet:', walletAddress);
       const result = await loadAccountInfo(walletAddress);
+      console.log('[App.loadAccInfo] Result from loadAccountInfo:', result);
       if (result.success) {
         setAccountInfo(result.accountInfo);
         setTempUserName(result.accountInfo.userName);
-        appendLog("Account info loaded.");
+        if (!result.accountInfo.userName || result.accountInfo.userName.trim() === "") {
+          console.log('[App.loadAccInfo] Username not found in loaded account info.');
+          appendLog("Username not found.");
+        } else {
+          console.log('[App.loadAccInfo] Username loaded:', result.accountInfo.userName);
+          appendLog("Account info loaded with username: " + result.accountInfo.userName);
+        }
       } else {
+        console.error('[App.loadAccInfo] Failed to load account info:', result.error);
         appendLog("Failed to load account info: " + result.error);
       }
     } catch (error) {
-      console.error("Error loading account info:", error);
+      console.error('[App.loadAccInfo] Error:', error);
       appendLog("Error loading account info: " + error.message);
     }
   }, [walletAddress, appendLog]);
 
+  // Username editing functions
   const toggleEditUserName = () => {
     setTempUserName(accountInfo.userName);
     setEditingUserName(true);
@@ -138,10 +132,11 @@ function App() {
 
   const handleSaveUserName = async () => {
     const trimmedName = tempUserName.slice(0, 44);
-    const newAccountInfo = { ...accountInfo, userName: trimmedName };
-    const saveResp = await window.electronAPI.saveAccountInfo({ walletAddress, accountInfo: newAccountInfo });
+    console.log('[App.handleSaveUserName] Saving username for wallet:', walletAddress, 'Username:', trimmedName);
+    const saveResp = await window.electronAPI.saveUserName({ walletAddress, userName: trimmedName });
+    console.log('[App.handleSaveUserName] Save response:', saveResp);
     if (saveResp.success) {
-      setAccountInfo(newAccountInfo);
+      setAccountInfo({ ...accountInfo, userName: trimmedName });
       appendLog('Username saved.');
     } else {
       appendLog('Error saving username: ' + saveResp.error);
@@ -154,7 +149,7 @@ function App() {
     setEditingUserName(false);
   };
 
-  // Lines ~130–170: Inbox Functions
+  // Inbox Functions
   const fetchInboxMessages = async () => {
     if (!walletAddress) return;
     try {
@@ -178,7 +173,6 @@ function App() {
     }
   }, [selectedTab, walletAddress]);
 
-  // Lines ~170–210: Updated handleViewMessage (Inbox view)
   const handleViewMessage = async (msg) => {
     try {
       appendLog("Viewing message with ID: " + msg.id);
@@ -208,17 +202,15 @@ function App() {
       const decryptedMsg = decryptedMsgBuffer.toString('utf8').trim();
       appendLog("Decrypted message: " + decryptedMsg);
       
-      // Parse the decrypted message into subject and body.
       const lines = decryptedMsg.split('\n');
       const subjectLine = lines[0] || "";
       const subject = subjectLine.replace(/^Subject:\s*/i, '').trim();
       const body = lines.slice(1).join('\n').trim();
       
-      // For Inbox view, display only the message body.
       setCurrentMessage({
         sender: msg.creator,
         subject,
-        originalBody: body, // for reply formatting
+        originalBody: body,
         body: body,
       });
     } catch (error) {
@@ -226,12 +218,10 @@ function App() {
     }
   };
 
-  // New function: Reply from Inbox message box.
   const handleReplyFromInbox = () => {
     if (currentMessage) {
       setMsgTo(currentMessage.sender);
       setMsgSubject(`Re: ${currentMessage.subject}`);
-      // Format the reply with a blank first line, then the header and original details.
       const replyContent = `\n----Original Message----\nFrom: ${currentMessage.sender}\nSubject: ${currentMessage.subject}\nMessage: ${currentMessage.originalBody}`;
       setMsgBody(replyContent);
       setSelectedTab('Message');
@@ -249,7 +239,7 @@ function App() {
     setSelectedTab('Wallet');
   };
 
-  // Lines ~210–280: Login and Wallet Functions
+  // Login and Wallet Functions
   const handleLogin = async () => {
     appendLog('Starting login process...');
     try {
@@ -285,6 +275,8 @@ function App() {
               setWalletAddress(address);
               setWallet(wallet);
               appendLog('Login successful.');
+              // First fetch balance, then load persisted account info (username)
+              await fetchBalance();
               await loadAccInfo();
               const friendsResp = await loadFriendsList(address);
               if (friendsResp.success) {
@@ -329,13 +321,13 @@ function App() {
 
   useEffect(() => {
     if (walletAddress) {
-      fetchBalance();
+      // fetchBalance and loadAccInfo are now triggered in the walletAddress useEffect above.
+      // This useEffect is kept for periodic balance updates.
       const interval = setInterval(fetchBalance, 15000);
       return () => clearInterval(interval);
     }
   }, [walletAddress, fetchBalance]);
 
-  // Lines ~280–300: Send Tokens Function
   const handleSend = async () => {
     if (!client || !walletAddress) {
       appendLog('You must log in first.');
@@ -352,7 +344,6 @@ function App() {
     }
   };
 
-  // New function: handleSendMessage (Send Bitmail message flow)
   const handleSendMessage = async () => {
     try {
       if (!client || !walletAddress || !msgTo || !msgSubject || !msgBody) {
@@ -360,12 +351,10 @@ function App() {
         return;
       }
       
-      // Show sending message modal
       setMessageStatus("Sending message, please wait...");
       setShowMessageStatus(true);
       
       appendLog(`Fetching public key for receiver: ${msgTo}`);
-      // Use API endpoint to fetch receiver public key.
       const response = await fetch(`${config.COSMOS_API}/cosmos/auth/v1beta1/accounts/${msgTo}`);
       if (!response.ok) {
         setMessageStatus("");
@@ -386,7 +375,6 @@ function App() {
       const fullMessage = `Subject: ${msgSubject}\n\n${msgBody}`;
       const receiverPubKeyBuffer = Buffer.from(receiverPubKey, 'base64');
       
-      // Encrypt the message with the receiver's public key.
       const encryptedMessageObj = await eccrypto.encrypt(receiverPubKeyBuffer, Buffer.from(fullMessage, 'utf8'));
       const encryptedMessageStr = JSON.stringify({
         iv: encryptedMessageObj.iv.toString('base64'),
@@ -405,7 +393,6 @@ function App() {
       const ipfsCid = uploadResult.cid;
       appendLog("IPFS CID received: " + ipfsCid);
       
-      // Encrypt the IPFS CID using the receiver's public key.
       const encryptedCidObj = await eccrypto.encrypt(receiverPubKeyBuffer, Buffer.from(ipfsCid, 'utf8'));
       const encryptedCidStr = JSON.stringify({
         iv: encryptedCidObj.iv.toString('base64'),
@@ -424,13 +411,12 @@ function App() {
         }
       };
       const fee = {
-        amount: [{ denom: MICRO_DENOM, amount: '2000' }],
+        amount: [{ denom: MICRO_DENOM, amount: '100' }],
         gas: '200000'
       };
       const txResult = await client.signAndBroadcast(walletAddress, [msgTx], fee, 'Send Message');
       appendLog(`Message transaction result:\n${JSON.stringify(txResult, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)}`);
       
-      // Update modal to show success and then hide it.
       setMessageStatus("Message successfully sent.");
       setTimeout(() => {
         setShowMessageStatus(false);
@@ -444,6 +430,7 @@ function App() {
     }
   };
 
+  // If not logged in, show LoginPanel
   if (!walletAddress) {
     return (
       <LoginPanel
@@ -457,197 +444,45 @@ function App() {
     );
   }
 
+  // Render the Layout (presentation) component and pass all necessary props
   return (
-    <Container maxWidth="lg" sx={{ mt: 4 }}>
-      <Typography variant="h3" align="center" gutterBottom>
-        BitMail Dashboard
-      </Typography>
-      <Grid container spacing={2}>
-        <Grid item xs={12} md={3}>
-          <NavigationSidebar
-            tabs={['Account Info', 'Wallet', 'Faucet', 'Inbox', 'Message', 'Friends', 'QR Code']}
-            selectedTab={selectedTab}
-            onSelectTab={setSelectedTab}
-          />
-        </Grid>
-        <Grid item xs={12} md={9}>
-          <Card variant="outlined">
-            <CardContent>
-              {selectedTab === 'Wallet' && (
-                <WalletPanel
-                  walletAddress={walletAddress}
-                  balance={balance}
-                  toAddress={toAddress}
-                  setToAddress={setToAddress}
-                  amount={amount}
-                  setAmount={setAmount}
-                  handleSend={handleSend}
-                />
-              )}
-              {selectedTab === 'Account Info' && (
-                <AccountInfoPanel
-                  walletAddress={walletAddress}
-                  accountInfo={accountInfo}
-                  editingUserName={editingUserName}
-                  tempUserName={tempUserName}
-                  setTempUserName={setTempUserName}
-                  handleSaveUserName={handleSaveUserName}
-                  handleCancelEditUserName={handleCancelEditUserName}
-                  toggleEditUserName={toggleEditUserName}
-                />
-              )}
-              {selectedTab === 'Faucet' && (
-                <FaucetPanel walletAddress={walletAddress} appendLog={appendLog} />
-              )}
-              {selectedTab === 'Inbox' && (
-                <Box sx={{ maxHeight: '400px', overflowY: 'auto', p: 1 }}>
-                  <Typography variant="h5" gutterBottom>
-                    Inbox
-                  </Typography>
-                  {inboxMessages.length === 0 ? (
-                    <Typography variant="body1">No messages found.</Typography>
-                  ) : (
-                    inboxMessages.map((msg) => (
-                      <Box key={msg.id} sx={{ borderBottom: '1px solid #ccc', py: 1 }}>
-                        <Typography variant="body1">
-                          <strong>From:</strong> {msg.creator}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>ID:</strong> {msg.id}
-                        </Typography>
-                        <Box sx={{ mt: 1 }}>
-                          <Button
-                            variant="contained"
-                            onClick={() => handleViewMessage(msg)}
-                            sx={{ mr: 1 }}
-                          >
-                            View Message
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            onClick={() => handleSendBitmail(msg.creator)}
-                            sx={{ mr: 1 }}
-                          >
-                            Send Bitmail
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            onClick={() => handleSendBTMLToken(msg.creator)}
-                          >
-                            Send BTML Token
-                          </Button>
-                        </Box>
-                      </Box>
-                    ))
-                  )}
-                  {currentMessage && (
-                    <Box sx={{ mt: 2, p: 2, border: '1px solid #ccc', borderRadius: 1 }}>
-                      <Typography variant="h6">Message Details</Typography>
-                      <Typography variant="body2">
-                        <strong>From:</strong> {currentMessage.sender}
-                      </Typography>
-                      <Typography variant="body2">
-                        <strong>Subject:</strong> {currentMessage.subject}
-                      </Typography>
-                      <Box
-                        sx={{
-                          mt: 1,
-                          maxHeight: '150px',
-                          overflowY: 'auto',
-                          backgroundColor: '#f5f5f5',
-                          p: 1,
-                        }}
-                      >
-                        <Typography variant="body1">
-                          {currentMessage.body}
-                        </Typography>
-                      </Box>
-                      <Button variant="contained" sx={{ mt: 1 }} onClick={handleReplyFromInbox}>
-                        Reply
-                      </Button>
-                    </Box>
-                  )}
-                </Box>
-              )}
-              {selectedTab === 'Message' && (
-                <MessagePanel
-                  msgTo={msgTo}
-                  setMsgTo={setMsgTo}
-                  msgSubject={msgSubject}
-                  setMsgSubject={setMsgSubject}
-                  msgBody={msgBody}
-                  setMsgBody={setMsgBody}
-                  handleSendMessage={handleSendMessage}
-                />
-              )}
-              {selectedTab === 'Friends' && (
-                <FriendsPanel
-                  friends={friends}
-                  handleDeleteFriend={(friend) => {
-                    // Implement friend deletion logic here.
-                  }}
-                  handleAddFriend={() => {
-                    // Implement friend addition logic here (e.g., open a QR upload dialog).
-                  }}
-                />
-              )}
-              {selectedTab === 'QR Code' && (
-                <QRCodePanel
-                  walletAddress={walletAddress}
-                  accountInfo={accountInfo}
-                  appendLog={appendLog}
-                  handleDownloadQRCode={() => {
-                    // Implement QR code download logic here.
-                  }}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-      <Box sx={{ mt: 4 }}>
-        <Typography variant="h6">Log</Typography>
-        <Typography
-          variant="body1"
-          sx={{
-            whiteSpace: 'pre-wrap',
-            backgroundColor: '#333',
-            color: 'white',
-            p: 2,
-            borderRadius: 1,
-          }}
-        >
-          {log}
-        </Typography>
-      </Box>
-      {/* Modal for message sending status */}
-      <Modal
-        open={showMessageStatus}
-        onClose={(e, reason) => {
-          // Prevent closing modal via backdrop click
-          if (reason !== 'backdropClick') {
-            setShowMessageStatus(false);
-          }
-        }}
-        disableEscapeKeyDown
-      >
-        <Box
-          sx={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            bgcolor: 'background.paper',
-            p: 4,
-            border: '2px solid #000',
-            borderRadius: 2,
-            textAlign: 'center'
-          }}
-        >
-          <Typography variant="h6">{messageStatus}</Typography>
-        </Box>
-      </Modal>
-    </Container>
+    <Layout
+      selectedTab={selectedTab}
+      setSelectedTab={setSelectedTab}
+      walletAddress={walletAddress}
+      balance={balance}
+      toAddress={toAddress}
+      setToAddress={setToAddress}
+      amount={amount}
+      setAmount={setAmount}
+      handleSend={handleSend}
+      accountInfo={accountInfo}
+      editingUserName={editingUserName}
+      tempUserName={tempUserName}
+      setTempUserName={setTempUserName}
+      handleSaveUserName={handleSaveUserName}
+      handleCancelEditUserName={handleCancelEditUserName}
+      toggleEditUserName={toggleEditUserName}
+      appendLog={appendLog}
+      inboxMessages={inboxMessages}
+      handleViewMessage={handleViewMessage}
+      handleSendBitmail={handleSendBitmail}
+      handleSendBTMLToken={handleSendBTMLToken}
+      currentMessage={currentMessage}
+      handleReplyFromInbox={handleReplyFromInbox}
+      msgTo={msgTo}
+      setMsgTo={setMsgTo}
+      msgSubject={msgSubject}
+      setMsgSubject={setMsgSubject}
+      msgBody={msgBody}
+      setMsgBody={setMsgBody}
+      handleSendMessage={handleSendMessage}
+      friends={friends}
+      log={log}
+      showMessageStatus={showMessageStatus}
+      setShowMessageStatus={setShowMessageStatus}
+      messageStatus={messageStatus}
+    />
   );
 }
 
