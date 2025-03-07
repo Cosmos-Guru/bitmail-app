@@ -6,7 +6,6 @@ const QRCodePanel = ({ walletAddress, accountInfo, appendLog, onPromptForUsernam
   const qrRef = useRef(null);
 
   // Construct the QR code value as a JSON string.
-  // Note: Replace the public_key value with a dynamic value if needed.
   const qrValue = JSON.stringify({
     btml_address: walletAddress,
     public_key: "AmD1Xt109BRRPYqpruiGTwsXNHY1Hzb5t1K+D9IlziWc",
@@ -16,19 +15,21 @@ const QRCodePanel = ({ walletAddress, accountInfo, appendLog, onPromptForUsernam
 
   const downloadQRCode = () => {
     if (qrRef.current) {
-      // Find the canvas element rendered by QRCodeCanvas
       const canvas = qrRef.current.querySelector('canvas');
       if (canvas) {
-        const dataURL = canvas.toDataURL('image/png');
+        // Important: Increase resolution and force PNG type
+        const dataURL = canvas.toDataURL('image/png', 1.0);  // Highest quality PNG
+
         const link = document.createElement('a');
-        // Use the username in the filename if available, fallback to "qr_code.png"
-        const fileName = accountInfo.userName && accountInfo.userName.trim() !== ""
+        const fileName = accountInfo.userName?.trim()
           ? `${accountInfo.userName}.png`
           : 'qr_code.png';
+
         link.download = fileName;
         link.href = dataURL;
         link.click();
-        appendLog("QR Code downloaded as " + fileName);
+
+        appendLog(`QR Code downloaded as ${fileName}`);
       } else {
         appendLog("QR Code canvas not found.");
       }
@@ -41,16 +42,27 @@ const QRCodePanel = ({ walletAddress, accountInfo, appendLog, onPromptForUsernam
         Download QR Code
       </Typography>
       {walletAddress ? (
-        accountInfo.userName && accountInfo.userName.trim() !== "" ? (
+        accountInfo.userName?.trim() ? (
           <Box>
-            {/* Hidden QR code canvas */}
+            {/* QR Canvas is now visible, high contrast, and high res */}
             <Box
               ref={qrRef}
-              sx={{ display: 'inline-block', visibility: 'hidden', position: 'absolute' }}
+              sx={{
+                display: 'inline-block',
+                width: 512,
+                height: 512,
+                backgroundColor: '#FFFFFF',
+              }}
             >
-              <QRCodeCanvas value={qrValue} size={256} />
+              <QRCodeCanvas
+                value={qrValue}
+                size={512}              // Larger size for better scan readability
+                level="H"                // High error correction for robustness
+                bgColor="#FFFFFF"        // Pure white background
+                fgColor="#000000"        // Pure black foreground
+              />
             </Box>
-            <Button variant="contained" onClick={downloadQRCode}>
+            <Button variant="contained" onClick={downloadQRCode} sx={{ mt: 2 }}>
               Download QR Code
             </Button>
           </Box>
@@ -72,3 +84,4 @@ const QRCodePanel = ({ walletAddress, accountInfo, appendLog, onPromptForUsernam
 };
 
 export default QRCodePanel;
+

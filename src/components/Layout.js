@@ -1,6 +1,15 @@
 // src/components/Layout.js
 import React from 'react';
-import { Container, Box, Typography, Card, CardContent, Grid, Button, Modal } from '@mui/material';
+import {
+  Container,
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  Grid,
+  Modal,
+  Button
+} from '@mui/material';
 import NavigationSidebar from './NavigationSidebar';
 import WalletPanel from './WalletPanel';
 import AccountInfoPanel from './AccountInfoPanel';
@@ -41,6 +50,7 @@ const Layout = ({
   setMsgBody,
   handleSendMessage,
   friends,
+  handleAddFriend, // NEW: Pass down the add friend handler
   log,
   showMessageStatus,
   setShowMessageStatus,
@@ -54,7 +64,15 @@ const Layout = ({
       <Grid container spacing={2}>
         <Grid item xs={12} md={3}>
           <NavigationSidebar
-            tabs={['Account Info', 'Wallet', 'Faucet', 'Inbox', 'Message', 'Friends', 'QR Code']}
+            tabs={[
+              'Account Info',
+              'Wallet',
+              'Faucet',
+              'Inbox',
+              'Message',
+              'Friends',
+              'QR Code'
+            ]}
             selectedTab={selectedTab}
             onSelectTab={setSelectedTab}
           />
@@ -94,10 +112,15 @@ const Layout = ({
                     Inbox
                   </Typography>
                   {inboxMessages.length === 0 ? (
-                    <Typography variant="body1">No messages found.</Typography>
+                    <Typography variant="body1">
+                      No messages found.
+                    </Typography>
                   ) : (
                     inboxMessages.map((msg) => (
-                      <Box key={msg.id} sx={{ borderBottom: '1px solid #ccc', py: 1 }}>
+                      <Box
+                        key={msg.id}
+                        sx={{ borderBottom: '1px solid #ccc', py: 1 }}
+                      >
                         <Typography variant="body1">
                           <strong>From:</strong> {msg.creator}
                         </Typography>
@@ -130,8 +153,17 @@ const Layout = ({
                     ))
                   )}
                   {currentMessage && (
-                    <Box sx={{ mt: 2, p: 2, border: '1px solid #ccc', borderRadius: 1 }}>
-                      <Typography variant="h6">Message Details</Typography>
+                    <Box
+                      sx={{
+                        mt: 2,
+                        p: 2,
+                        border: '1px solid #ccc',
+                        borderRadius: 1
+                      }}
+                    >
+                      <Typography variant="h6">
+                        Message Details
+                      </Typography>
                       <Typography variant="body2">
                         <strong>From:</strong> {currentMessage.sender}
                       </Typography>
@@ -151,7 +183,11 @@ const Layout = ({
                           {currentMessage.body}
                         </Typography>
                       </Box>
-                      <Button variant="contained" sx={{ mt: 1 }} onClick={handleReplyFromInbox}>
+                      <Button
+                        variant="contained"
+                        sx={{ mt: 1 }}
+                        onClick={handleReplyFromInbox}
+                      >
                         Reply
                       </Button>
                     </Box>
@@ -174,10 +210,9 @@ const Layout = ({
                   friends={friends}
                   handleDeleteFriend={(friend) => {
                     // Implement friend deletion logic here.
+                    // For example, update the friends state and persist the change.
                   }}
-                  handleAddFriend={() => {
-                    // Implement friend addition logic here.
-                  }}
+                  handleAddFriend={handleAddFriend} // Pass down the new friend handler
                 />
               )}
               {selectedTab === 'QR Code' && (

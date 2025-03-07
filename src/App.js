@@ -144,6 +144,24 @@ function App() {
     setEditingUserName(false);
   };
 
+    // In App.js, after your state definitions (e.g., near the top of your App component)
+const handleAddFriend = (newFriend) => {
+  console.log('[App] Adding friend:', newFriend);
+  // Update the friends state by appending the new friend.
+  setFriends((prevFriends) => [...prevFriends, newFriend]);
+  // Persist the updated friends list by calling the IPC handler.
+  window.electronAPI
+    .saveFriendsList({ walletAddress, friends: [...friends, newFriend] })
+    .then((resp) => {
+      if (resp.success) {
+        console.log('[App] Friends list updated successfully.');
+      } else {
+        console.error('[App] Error saving friends list:', resp.error);
+      }
+    })
+    .catch((err) => console.error('[App] Error in saveFriendsList:', err));
+};
+
   const handleCancelEditUserName = () => {
     setTempUserName(accountInfo.userName);
     setEditingUserName(false);
@@ -478,6 +496,7 @@ function App() {
       setMsgBody={setMsgBody}
       handleSendMessage={handleSendMessage}
       friends={friends}
+      handleAddFriend={handleAddFriend} 
       log={log}
       showMessageStatus={showMessageStatus}
       setShowMessageStatus={setShowMessageStatus}

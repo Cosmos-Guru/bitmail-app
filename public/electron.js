@@ -3,11 +3,14 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
-const sharp = require('sharp');
-const jsQR = require('jsqr');
 const { execFile } = require('child_process');
 const util = require('util');
 const { saveMnemonic, retrieveMnemonic, hasMnemonicStored } = require('../src/secureMnemonic');
+const sharp = require('sharp');
+const { Worker } = require('worker_threads');
+global.Worker = Worker;
+const QrScanner = require('qr-scanner');
+
 
 let Store = null;
 let store = null;
@@ -323,6 +326,11 @@ function setupIpcMain() {
     }
   });
 
+  
+  
+
+
+
   ipcMain.handle('saveFriendsList', async (event, { walletAddress, friends }) => {
     try {
       const filePath = path.join(app.getPath('userData'), `${walletAddress}_friends.json`);
@@ -333,86 +341,6 @@ function setupIpcMain() {
       return {
         success: false,
         error: { code: "SAVE_FRIENDS_FAILED", message: "Failed to save friends list", details: error.message }
-      };
-    }
-  });
-
-  ipcMain.handle('readFriendQRCode', async (event) => {
-    try {
-      const win = BrowserWindow.getAllWindows()[0];
-      const result = await dialog.showOpenDialog(win, {
-        properties: ['openFile'],
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp'] }]
-      });
-      if (result.canceled) {
-        return {
-          success: false,
-          error: { code: "USER_CANCELLED", message: "User cancelled file selection", details: "" }
-        };
-      }
-      const filePath = result.filePaths[0];
-  
-      // Get the raw image data and its dimensions using sharp:
-      const { data, info } = await sharp(filePath)
-        .grayscale()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      
-      // Now pass the correct width and height to jsQR:
-      const code = jsQR(data, info.width, info.height, { inversionAttempts: 'dontInvert' });
-      if (!code) {
-        return {
-          success: false,
-          error: { code: "NO_QR_FOUND", message: "No QR code found in image", details: "" }
-        };
-      }
-      const friend = JSON.parse(code.data);
-      if (
-        typeof friend === 'object' &&
-        friend !== null &&
-        typeof friend.btml_address === 'string' &&
-        typeof friend.public_key === 'string'
-      ) {
-        return { success: true, friend: friend };
-      } else {
-        return {
-          success: false,
-          error: { code: "INVALID_QR_DATA", message: "QR code does not contain valid friend data", details: "" }
-        };
-      }
-    } catch (error) {
-      console.error('Error reading friend QR Code:', error);
-      return {
-        success: false,
-        error: { code: "READ_QR_FAILED", message: "Failed to read friend QR code", details: error.message }
-      };
-    }
-  });
-  
-
-  ipcMain.handle('downloadQRCode', async (event, { qrData, defaultFileName }) => {
-    try {
-      const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrData));
-      const buffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
-      const win = BrowserWindow.getAllWindows()[0];
-      const result = await dialog.showSaveDialog(win, {
-        defaultPath: path.join(app.getPath('downloads'), defaultFileName),
-        filters: [{ name: 'Images', extensions: ['png'] }]
-      });
-      if (result.canceled) {
-        return {
-          success: false,
-          error: { code: "USER_CANCELLED", message: "User cancelled save dialog", details: "" }
-        };
-      }
-      const filePath = result.filePath;
-      await fs.promises.writeFile(filePath, buffer);
-      return { success: true, filePath: filePath };
-    } catch (error) {
-      console.error('Error generating QR Code:', error);
-      return {
-        success: false,
-        error: { code: "QR_DOWNLOAD_FAILED", message: "Failed to generate QR code", details: error.message }
       };
     }
   });
