@@ -257,6 +257,29 @@ const handleAddFriend = (newFriend) => {
     setSelectedTab('Wallet');
   };
 
+  const handleDeleteFriend = (friendToDelete) => {
+    console.log('[App] Deleting friend:', friendToDelete);
+    // Update the friends state by filtering out the friend to delete.
+    setFriends((prevFriends) => {
+      const updatedFriends = prevFriends.filter(
+        (friend) => friend.btml_address !== friendToDelete.btml_address
+      );
+      // Persist the updated friends list using the IPC handler.
+      window.electronAPI
+        .saveFriendsList({ walletAddress, friends: updatedFriends })
+        .then((resp) => {
+          if (resp.success) {
+            console.log('[App] Friends list updated successfully after deletion.');
+          } else {
+            console.error('[App] Error saving friends list after deletion:', resp.error);
+          }
+        })
+        .catch((err) => console.error('[App] Error in saveFriendsList during deletion:', err));
+      return updatedFriends;
+    });
+  };
+  
+
   // Login and Wallet Functions
   const handleLogin = async () => {
     appendLog('Starting login process...');
@@ -497,6 +520,7 @@ const handleAddFriend = (newFriend) => {
       handleSendMessage={handleSendMessage}
       friends={friends}
       handleAddFriend={handleAddFriend} 
+      handleDeleteFriend={handleDeleteFriend}
       log={log}
       showMessageStatus={showMessageStatus}
       setShowMessageStatus={setShowMessageStatus}

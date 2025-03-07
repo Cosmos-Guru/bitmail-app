@@ -1,18 +1,25 @@
+// src/components/FriendsPanel.js
 import React, { useRef } from 'react';
-import { Typography, List, ListItem, ListItemText, Button } from '@mui/material';
+import { Typography, List, ListItem, ListItemText, Button, Box } from '@mui/material';
 import QrScanner from 'qr-scanner';
 
-// Set the path to the worker script (adjust if needed – here we assume it's in the public folder)
+// Set the path to the worker script – adjust if needed (this assumes the worker script is in your public folder)
 QrScanner.WORKER_PATH = 'qr-scanner-worker.min.js';
 
-const FriendsPanel = ({ friends, handleDeleteFriend, handleAddFriend }) => {
-  // Create a ref for the hidden file input element.
+const FriendsPanel = ({ 
+  friends, 
+  handleDeleteFriend, 
+  handleAddFriend, 
+  handleSendBitmail, 
+  handleSendBTMLToken 
+}) => {
   const fileInputRef = useRef(null);
 
   // Trigger the file input when the "Add Friend" button is clicked.
   const onAddFriend = () => {
     if (fileInputRef.current) {
-      fileInputRef.current.value = null; // Reset in case the same file is selected again.
+      // Reset the input so the same file can be re-selected if needed.
+      fileInputRef.current.value = null;
       fileInputRef.current.click();
     }
   };
@@ -47,7 +54,7 @@ const FriendsPanel = ({ friends, handleDeleteFriend, handleAddFriend }) => {
         typeof friend.public_key === 'string'
       ) {
         console.log('[FriendsPanel] Friend object parsed:', friend);
-        // Call the parent callback to add the friend (and persist it).
+        // Call the parent callback to add the friend.
         handleAddFriend(friend);
       } else {
         alert("QR code does not contain valid friend data.");
@@ -59,22 +66,49 @@ const FriendsPanel = ({ friends, handleDeleteFriend, handleAddFriend }) => {
   };
 
   return (
-    <div>
-      <Typography variant="h5">Friends List</Typography>
+    <Box>
+      <Typography variant="h5" gutterBottom>
+        Friends List
+      </Typography>
       <List>
         {friends.map((friend) => (
-          <ListItem key={friend.btml_address} divider>
+          <ListItem
+            key={friend.btml_address}
+            divider
+            sx={{ flexDirection: 'column', alignItems: 'flex-start' }}
+          >
             <ListItemText
               primary={friend.user_name || friend.btml_address}
               secondary={friend.btml_address}
             />
-            <Button color="error" onClick={() => handleDeleteFriend(friend)}>
-              Delete
-            </Button>
+            {/* Buttons on a new line */}
+            <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={() => handleSendBitmail(friend.btml_address)}
+              >
+                Send Bitmail
+              </Button>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={() => handleSendBTMLToken(friend.btml_address)}
+              >
+                Send BTML Token
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                onClick={() => handleDeleteFriend(friend)}
+              >
+                Delete
+              </Button>
+            </Box>
           </ListItem>
         ))}
       </List>
-      <Button variant="contained" onClick={onAddFriend}>
+      <Button variant="contained" onClick={onAddFriend} sx={{ mt: 2 }}>
         Add Friend
       </Button>
       {/* Hidden file input to trigger file selection */}
@@ -85,7 +119,7 @@ const FriendsPanel = ({ friends, handleDeleteFriend, handleAddFriend }) => {
         style={{ display: 'none' }}
         onChange={onFileSelected}
       />
-    </div>
+    </Box>
   );
 };
 
