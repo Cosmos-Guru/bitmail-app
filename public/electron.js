@@ -12,6 +12,7 @@ global.Worker = Worker;
 const QrScanner = require('qr-scanner');
 
 
+
 let Store = null;
 let store = null;
 let CID = null;
@@ -130,21 +131,26 @@ function setupIpcMain() {
     const { canceled, filePaths } = await dialog.showOpenDialog({});
     return canceled ? null : filePaths[0];
   });
-
   ipcMain.handle('uploadToIPFS', async (event, fileContents) => {
     try {
-      const tmpFilePath = path.join(tmpdir, `upload-${Date.now()}.txt`);
-      await fs.promises.writeFile(tmpFilePath, fileContents);
-      const { stdout } = await execFilePromise('ipfs', ['add', tmpFilePath]);
-      const cid = stdout.split(' ')[1].trim();
-      if (!isValidCID(cid)) {
-        console.error('Invalid CID returned from IPFS:', cid);
-        return {
-          success: false,
-          error: { code: "IPFS_UPLOAD_FAILED", message: "Invalid CID from IPFS", details: cid }
-        };
+      const { default: fetch } = await import('node-fetch');
+      // Use the global FormData and Blob (Node 18+)
+      const form = new FormData();
+      // Convert the file contents to a Blob with MIME type 'text/plain'
+      const blob = new Blob([fileContents], { type: 'text/plain' });
+      form.append('file', blob, 'upload.txt');
+  
+      const response = await fetch(`${config.IPFS_GATEWAY_URL}/add`, {
+        method: 'POST',
+        body: form,
+      });
+  
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
       }
-      await fs.promises.unlink(tmpFilePath);
+  
+      const data = await response.json();
+      const cid = data.Hash;
       return { success: true, cid: cid };
     } catch (error) {
       console.error('Error uploading to IPFS:', error);
@@ -154,19 +160,20 @@ function setupIpcMain() {
       };
     }
   });
-
+  
+  
+  
   ipcMain.handle('downloadFromIPFS', async (event, cid) => {
     try {
-      if (!isValidCID(cid)) {
-        return {
-          success: false,
-          error: { code: "INVALID_CID", message: "Invalid CID provided", details: cid }
-        };
+      const { default: fetch } = await import('node-fetch');
+      // Use POST instead of GET for the /cat endpoint
+      const response = await fetch(`${config.IPFS_GATEWAY_URL}/cat?arg=${cid}`, {
+        method: 'POST'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
       }
-      const tmpFilePath = path.join(tmpdir, `download-${Date.now()}.txt`);
-      const { stdout } = await execFilePromise('ipfs', ['get', cid, '-o', tmpFilePath]);
-      const data = await fs.promises.readFile(tmpFilePath, 'utf8');
-      await fs.promises.unlink(tmpFilePath);
+      const data = await response.text();
       return { success: true, data: data };
     } catch (error) {
       console.error('Error downloading from IPFS:', error);
@@ -176,6 +183,7 @@ function setupIpcMain() {
       };
     }
   });
+  
 
   ipcMain.handle('writeEncryptedFile', async (event, filename, encryptedContent) => {
     try {

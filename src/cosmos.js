@@ -1,6 +1,6 @@
-// src/cosmos.js
-import { DirectSecp256k1HdWallet, Registry } from '@cosmjs/proto-signing';
-import { SigningStargateClient } from '@cosmjs/stargate';
+import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
+import { Registry } from '@cosmjs/proto-signing';
+import { SigningStargateClient, defaultRegistryTypes } from '@cosmjs/stargate';
 import { MsgCreateHashCid } from './ehlTypes.js';
 import { COSMOS_API, FAUCET_URL, IPFS_GATEWAY_URL, RPC_URL } from './config.js';
 
@@ -12,6 +12,7 @@ export const createWalletFromMnemonic = async (mnemonic) => {
 export const connect = async (wallet) => {
   const [account] = await wallet.getAccounts();
   const registry = new Registry([
+    ...defaultRegistryTypes,
     ['/bitmail.ehl.MsgCreateHashCid', MsgCreateHashCid],
   ]);
   const client = await SigningStargateClient.connectWithSigner(RPC_URL, wallet, {
