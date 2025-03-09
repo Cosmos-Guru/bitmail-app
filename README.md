@@ -36,6 +36,7 @@ git clone https://github.com/Cosmos-Guru/bitmail-app.git
 cd bitmail-app
 yarn install
 yarn run dev
+```
 
 **Windows:**
 
